@@ -269,6 +269,20 @@ final class NotchOverlayController {
         }
     }
 
+    /// Plays the iPhone-style success checkmark animation when the user unlocks manually via password/Touch ID.
+    func presentManualUnlockSuccess() {
+        guard phase != .success, phase != .collapsing else { return }
+        isArmed = false
+        onActivate = nil
+        resolveTask?.cancel(); resolveTask = nil
+        scanTimeoutTask?.cancel(); scanTimeoutTask = nil
+        geometry = windowController.currentGeometry
+        activeUnlockStyle = GlanceSettings.shared.effectiveUnlockAnimationStyle
+        guard activeUnlockStyle != .none else { return }
+        windowController.show()
+        finish(success: true)
+    }
+
     // MARK: - Resolving (shared by both modes)
 
     /// Resolves the current attempt. Success plays its animation and then

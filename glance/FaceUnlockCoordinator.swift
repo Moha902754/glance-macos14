@@ -92,13 +92,19 @@ final class FaceUnlockCoordinator {
 
     private func evaluateTrigger() {
         guard LockMonitor.isScreenActuallyLocked() else {
-            if isTypingPassword, isEnabled, showsUI, NotchGeometry.preferredScreen() != nil {
+            let phase = NotchOverlayController.shared.phase
+            if hasArmedForCurrentLock, isEnabled, showsUI,
+               phase != .success, phase != .collapsing,
+               NotchGeometry.preferredScreen() != nil {
                 isTypingPassword = false
                 hasArmedForCurrentLock = false
                 hasAutoRetriedForCurrentLock = false
-                NotchOverlayController.shared.present(styleOverride: nil, onRetry: nil)
-                NotchOverlayController.shared.finish(success: true)
-                disarmOverlay()
+                scanTask?.cancel(); scanTask = nil
+                scanGeneration &+= 1
+                autoRetryTask?.cancel(); autoRetryTask = nil
+                camera.stop()
+                spaceKeyMonitor.stop()
+                NotchOverlayController.shared.presentManualUnlockSuccess()
                 return
             }
             isTypingPassword = false
