@@ -84,7 +84,7 @@ final class FaceUnlockCoordinator {
             Task { @MainActor [weak self] in
                 self?.observeLockAndWakeEvents()
                 // Brief settle delay: CGSession's reported state can lag the true state right after wake.
-                try? await Task.sleep(nanoseconds: 300_000_000)
+                if self?.lockMonitor.lastEvent != .screenUnlocked { try? await Task.sleep(nanoseconds: 300_000_000) }
                 self?.evaluateTrigger()
             }
         }

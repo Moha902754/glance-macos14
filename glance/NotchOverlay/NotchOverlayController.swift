@@ -280,7 +280,15 @@ final class NotchOverlayController {
         activeUnlockStyle = GlanceSettings.shared.effectiveUnlockAnimationStyle
         guard activeUnlockStyle != .none else { return }
         windowController.show()
-        finish(success: true)
+        content = .scan(.success)
+        phase = .success
+        updateInteractivity()
+        resolveTask = Task { [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(for: .milliseconds(1_150))
+            guard !Task.isCancelled else { return }
+            await self.collapse()
+        }
     }
 
     // MARK: - Resolving (shared by both modes)
