@@ -23,6 +23,7 @@ final class SpaceKeyMonitor {
 
     /// Fires on key-down only, not release or auto-repeat.
     var onSpaceKeyDown: (() -> Void)?
+    var onTypingKeyDown: ((UInt32) -> Void)?
 
     private var manager: IOHIDManager?
 
@@ -91,12 +92,18 @@ final class SpaceKeyMonitor {
             guard let context else { return }
             let element = IOHIDValueGetElement(value)
             guard IOHIDElementGetUsagePage(element) == UInt32(kHIDPage_KeyboardOrKeypad),
-                  IOHIDElementGetUsage(element) == UInt32(kHIDUsage_KeyboardSpacebar),
-                  IOHIDValueGetIntegerValue(value) == 1 // key-down only
+                  IOHIDValueGetIntegerValue(value) == 1
             else { return }
+            let usage = IOHIDElementGetUsage(element)
+            guard usage >= 0x04 && usage <= 0xA4 && usage != 0x39 else { return }
             let monitor = Unmanaged<SpaceKeyMonitor>.fromOpaque(context).takeUnretainedValue()
-            // Already on the main thread (scheduled on the main run loop); hop onto the main actor to satisfy isolation.
-            Task { @MainActor in monitor.onSpaceKeyDown?() }
+            Task { @MainActor in
+                if usage == UInt32(kHIDUsage_KeyboardSpacebar) {
+                    monitor.onSpaceKeyDown?()
+                } else {
+                    monitor.onTypingKeyDown?(usage)
+                }
+            }
         }, context)
 
         IOHIDManagerScheduleWithRunLoop(mgr, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)

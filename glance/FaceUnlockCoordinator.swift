@@ -44,6 +44,7 @@ final class FaceUnlockCoordinator {
     private var hasArmedForCurrentLock = false
     /// One-shot per lock session — an auto-retry that could itself auto-retry would loop the camera for the whole lock session.
     private var hasAutoRetriedForCurrentLock = false
+    private var isTypingPassword = false
     private var scanTask: Task<Void, Never>?
     /// Bumped by every `startScanCycle()`; a cycle bails once superseded (see `runScanCycle(generation:)`).
     private var scanGeneration = 0
@@ -67,6 +68,7 @@ final class FaceUnlockCoordinator {
         self.isEnabled = GlanceSettings.shared.isFaceUnlockEnabled
         self.matchThreshold = GlanceSettings.shared.matchThreshold
         spaceKeyMonitor.onSpaceKeyDown = { [weak self] in self?.handleSpaceKeyPress() }
+        spaceKeyMonitor.onTypingKeyDown = { [weak self] usage in self?.handlePasswordTyping(usage: usage) }
         observeLockAndWakeEvents()
     }
 
@@ -90,6 +92,16 @@ final class FaceUnlockCoordinator {
 
     private func evaluateTrigger() {
         guard LockMonitor.isScreenActuallyLocked() else {
+            if isTypingPassword, isEnabled, showsUI, NotchGeometry.preferredScreen() != nil {
+                isTypingPassword = false
+                hasArmedForCurrentLock = false
+                hasAutoRetriedForCurrentLock = false
+                NotchOverlayController.shared.present(styleOverride: nil, onRetry: nil)
+                NotchOverlayController.shared.finish(success: true)
+                disarmOverlay()
+                return
+            }
+            isTypingPassword = false
             hasArmedForCurrentLock = false
             hasAutoRetriedForCurrentLock = false
             disarmOverlay()
@@ -167,7 +179,6 @@ final class FaceUnlockCoordinator {
     /// Idempotent and safe to call on every lock/wake event. Deliberately does not prompt for Input Monitoring — a missing grant just means "don't listen."
     private func updateSpaceMonitor() {
         let shouldListen = isEnabled
-            && GlanceSettings.shared.unlockTriggers.contains(.onSpace)
             && LockMonitor.isScreenActuallyLocked()
             && SpaceKeyMonitor.hasInputMonitoringAccess()
         if shouldListen {
@@ -178,6 +189,27 @@ final class FaceUnlockCoordinator {
     }
 
     /// Runs the same gate chain as `evaluateTrigger`, then starts a scan. Independent of `LockMonitor` events, so doesn't touch `hasArmedForCurrentLock`.
+    private func handlePasswordTyping(usage: UInt32) {
+        guard isEnabled, LockMonitor.isScreenActuallyLocked() else { return }
+        if usage == 0x29 {
+            isTypingPassword = false
+            return
+        }
+        if !isTypingPassword {
+            isTypingPassword = true
+            scanTask?.cancel()
+            scanTask = nil
+            scanGeneration &+= 1
+            autoRetryTask?.cancel()
+            autoRetryTask = nil
+            camera.stop()
+            statusMessage = "Typing password…"
+            if showsUI, NotchOverlayController.shared.phase == .scanning || NotchOverlayController.shared.phase == .failure {
+                Task { await NotchOverlayController.shared.collapse() }
+            }
+        }
+    }
+
     private func handleSpaceKeyPress() {
         guard isEnabled,
               GlanceSettings.shared.unlockTriggers.contains(.onSpace),
